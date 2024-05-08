@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-void allocDataHost(uint8_t ***data, int numantenna, int numchannels, int numffts, int nbit, int nPol, int iscomplex, int *subintbytes);
+void allocDataHost(int *numchannels, int *numffts, int *nbit, int *nPol, int *iscomplex, int *subintbytes);
 
 void freeMem(char ***antenna, char ***antFiles, int *nant, double **antFileOffsets, FILE ***antStream);
 

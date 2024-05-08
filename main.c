@@ -11,10 +11,12 @@
 #define MAX_ANTENNA_NAME 20
 #define MAX_ANTENNA_FILE_NAME 50
 
-void parseConfig2(char *configFileName, int *nBit, int *nPol, int *isComplex, int *nChan, int *nant, double *lo, double *bandwidth, int *numFFT, char** antenna, char** antFiles, double **delays, double *antFileOffsets) {
+void parseConfig2(char *configFileName, int *nBit, int *nPol, int *isComplex, int *nChan, int *nant, double *lo,
+                  double *bandwidth, int *numFFT, char **antenna, char **antFiles, double **delays,
+                  double *antFileOffsets) {
     FILE *fconfig = fopen(configFileName, "r");
 
-    if(fconfig == NULL) {
+    if (fconfig == NULL) {
         printf("Error Opening File %s", configFileName);
         return;
     }
@@ -126,10 +128,12 @@ void parseConfig2(char *configFileName, int *nBit, int *nPol, int *isComplex, in
     fclose(fconfig);
 }
 
-void parseConfig(char *configFileName, int *nBit, int *nPol, int *isComplex, int *nChan, int *nant, double *lo, double *bandwidth, int *numFFT, char** antenna, char** antFiles, double (*delays)[3], double *antFileOffsets) {
+void parseConfig(char *configFileName, int *nBit, int *nPol, int *isComplex, int *nChan, int *nant, double *lo,
+                 double *bandwidth, int *numFFT, char **antenna, char **antFiles, double (*delays)[3],
+                 double *antFileOffsets) {
     FILE *fconfig = fopen(configFileName, "r");
 
-    if(fconfig == NULL) {
+    if (fconfig == NULL) {
         printf("Error Opening File %s", configFileName);
         return;
     }
@@ -282,17 +286,17 @@ void readConfig(int *nbit, int *nPol, int *iscomplex, int *nchan, int *nant, dou
     }
 }
 
-void initMem(char *** antenna, char *** antFiles, double *** delays, double **antFileOffsets) {
+void initMem(char ***antenna, char ***antFiles, double ***delays, double **antFileOffsets) {
     // Initialize variables before passing to parseConfig
-    *antenna = (char **)malloc(MAX_ANTENNAS * sizeof(char *));
-    *antFiles = (char **)malloc(MAX_ANTENNAS * sizeof(char *));
-    *delays = (double **)malloc(MAX_ANTENNAS * sizeof(double *));
-    *antFileOffsets = (double *)malloc(sizeof(double));
+    *antenna = (char **) malloc(MAX_ANTENNAS * sizeof(char *));
+    *antFiles = (char **) malloc(MAX_ANTENNAS * sizeof(char *));
+    *delays = (double **) malloc(MAX_ANTENNAS * sizeof(double *));
+    *antFileOffsets = (double *) malloc(MAX_ANTENNAS * sizeof(double));
 
     for (int i = 0; i < MAX_ANTENNAS; i++) {
-        (*antenna)[i] = (char *)malloc(MAX_ANTENNA_NAME * sizeof(char));
-        (*antFiles)[i] = (char *)malloc(MAX_ANTENNA_FILE_NAME * sizeof(char));
-        (*delays)[i] = (double *)malloc(3*sizeof(double));
+        (*antenna)[i] = (char *) malloc(MAX_ANTENNA_NAME * sizeof(char));
+        (*antFiles)[i] = (char *) malloc(MAX_ANTENNA_FILE_NAME * sizeof(char));
+        (*delays)[i] = (double *) malloc(3 * sizeof(double));
     }
 }
 
@@ -304,24 +308,14 @@ int main() {
     double *antFileOffsets; // Changed to a regular array
     double **delays = NULL; // Changed to a 2D array
 
-    //initMem(&antenna, &antFiles, &delays, &antFileOffsets);
-
-    antenna = (char **)malloc(MAX_ANTENNAS * sizeof(char *));
-    antFiles = (char **)malloc(MAX_ANTENNAS * sizeof(char *));
-    delays = (double **)malloc(MAX_ANTENNAS * sizeof(double *));
-    antFileOffsets = (double *)malloc(MAX_ANTENNAS * sizeof(double));
-
-    for (int i = 0; i < MAX_ANTENNAS; i++) {
-        (antenna)[i] = (char *)malloc(MAX_ANTENNA_NAME * sizeof(char));
-        (antFiles)[i] = (char *)malloc(MAX_ANTENNA_FILE_NAME * sizeof(char));
-        (delays)[i] = (double *)malloc(3*sizeof(double));
-    }
+    initMem(&antenna, &antFiles, &delays, &antFileOffsets);
 
     // Call parseConfig function
-    parseConfig2(configFileName, &nBit, &nPol, &isComplex, &nChan, &nant, &lo, &bandwidth, &numFFT, antenna, antFiles, delays,
+    parseConfig2(configFileName, &nBit, &nPol, &isComplex, &nChan, &nant, &lo, &bandwidth, &numFFT, antenna, antFiles,
+                 delays,
                  antFileOffsets);
 
-    u_int8_t ** inputdata; /**< the input data [numstations][subintbytes] */
+    u_int8_t **inputdata = (u8 **) malloc(nant * sizeof(u8 *)); /**< the input data [numstations][subintbytes] */
     int subIntBytes = 0;
 
     // Output the parsed config
@@ -330,69 +324,71 @@ int main() {
                antFileOffsets);
 
     // Mem Alloc
-
-    allocDataHost(&inputdata, nant, nChan, numFFT, nBit, nPol, isComplex, &subIntBytes);
+    allocDataHost(&nChan, &numFFT, &nBit, &nPol, &isComplex, &subIntBytes);
 
     // File open
 
     FILE **antStream;
 
-    antStream = (FILE **)malloc(nant * sizeof(FILE *));
+    antStream = (FILE **) malloc(nant * sizeof(FILE *));
     if (antStream == NULL) {
         fprintf(stderr, "Memory allocation failed. Quitting.\n");
         return 1;
     }
 
-    openFiles(nant, antFiles, antStream);
+    openFiles(&nant, antFiles, antStream);
 
-    FxKernel test_kernel;
-
-    init_FxKernel(&test_kernel, nant, nChan, numFFT, nBit, lo, bandwidth, inputdata);
-
-    int status = readdata(subIntBytes, antStream, inputdata, nant);
-    if (status) exit(1);
-
-    setDelays(&test_kernel, delays, antFileOffsets);
+    readdata(&subIntBytes, antStream, inputdata, &nant, nant);
 
     // Checkpoint for timing
-    struct timespec starttime;
-    char starttimestring[64];
+    struct timespec *starttime = (struct timespec *) malloc(sizeof(struct timespec));
+    char *starttimestring = (char *) malloc(64 * sizeof(char));
 
-    startTiming(&starttime, starttimestring);
+    //FxKernel declarations
+    int fftchannels, stridesize, substridesize, fractionalLoFreq, nbaselines;
+    double sampletime;
+    cf32 ***unpacked = (cf32 ***) malloc(nant * sizeof(cf32 **));
+    cf32 ***channelised = (cf32 ***) malloc(nant * sizeof(cf32 **));
+    cf32 ***conjchannels = (cf32 ***) malloc(nant * sizeof(cf32 **));
+    cf32 ***visibilities = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
 
-    //Process
+    int *baselineCount = (int *) malloc((nant * (nant - 1) / 2) * sizeof(int));
 
-    process(&test_kernel);
+    init_FxKernel(&nant, &nChan, &nBit, &lo, &bandwidth, starttime,
+                  starttimestring, &fftchannels, &sampletime, &stridesize,
+                  &substridesize, &fractionalLoFreq, unpacked, channelised, conjchannels, visibilities, &nbaselines, baselineCount);
 
-    // Print runtime
+    // Should be a SPLIT
+
+    // END OF SPLIT
 
     long long diff_ms;
+    int split_size = 2;
 
-    endTiming(&starttime, &diff_ms);
+    cf32 ***vis_to_norm = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
+    int *baselineCount_to_norm = (int *) malloc((nant * (nant - 1) / 2) * sizeof(int));
 
-    // Save the visibilities into a dumb ascii file
-    saveVisibilities("vis.out", &test_kernel);
+        processAntennasAndBaseline(&nant, &numFFT, &fftchannels, antFileOffsets, &sampletime, inputdata, unpacked,
+                                   channelised,
+                                   conjchannels, delays, &nBit, &substridesize, &stridesize, &fractionalLoFreq, &lo,
+                                   &nChan,
+                                   visibilities, baselineCount, &bandwidth, vis_to_norm, baselineCount_to_norm);
 
-    saveLog(diff_ms, starttimestring);
 
-    freeFxKernel(&test_kernel);
+    printf("nBaselines : %d \n", nbaselines);
+    int nbaselines_split = nbaselines / split_size;
+    cf32 ***vis_out = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
 
-    // Free allocated memory
-    for (int i = 0; i < MAX_ANTENNAS; i++) {
-        free(antenna[i]);
-        free(antFiles[i]);
+    for (int i = 0; i < split_size; i++) {
+        processNormalize(&nbaselines_split, &(baselineCount_to_norm[nbaselines_split * i]),
+                         &(vis_to_norm[nbaselines_split * i]), &nChan, &(vis_out[nbaselines_split * i]));
     }
 
-    free(antenna);
-    free(antFiles);
-    free(antFileOffsets);
+    endTiming(starttime, &diff_ms);
 
-    for (int i = 0; i < nant; i++) {
-        if (antStream[i] != NULL) {
-            fclose(antStream[i]);
-        }
-    }
-    free(antStream);
+    saveVisibilities(&nbaselines, &nChan, vis_out, &bandwidth);
+
+    saveLog(&diff_ms, starttimestring);
 
     return 0;
 }
