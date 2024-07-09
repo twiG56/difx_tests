@@ -300,8 +300,28 @@ void initMem(char ***antenna, char ***antFiles, double ***delays, double **antFi
     }
 }
 
+void mergeTest(int nbaselines, int numffts, int nant){
+    // 28800 = 240 * 120 // 120 : objetif de sortie
+    for(int i = 0; i < nbaselines; i++) {
+        for(int j = 0; j < 4; j++) {
+            for(int k = 1; k < numffts; k++) {
+                //vectorAdd_cf32_I(visibilities[i + k * (nant * (nant - 1) / 2)][j], visibilities[i][j], *nChan);
+                if(((i + k * nbaselines) % 10000) == 0) {
+                    printf("Iter Vis : %d \n", (i + k * (nant * (nant - 1) / 2)));
+                }
+            }
+        }
+        for(int k = 1; k < numffts; k++) {
+            //baselineCount[i] += baselineCount[i + k * nbaselines];
+            //printf("Iter Baseline : %d \n", (i + k * nbaselines));
+        }
+    }
+    //memcpy(visibilities_out, visibilities, (nant * (nant - 1) / 2) * sizeof(cf32***));
+    //memcpy(baselineCount_out, baselineCount, (nant * (nant - 1) / 2) * sizeof(int));
+}
+
 int main() {
-    char *configFileName = "./test16.conf"; // Provide the path to your config file
+    char *configFileName = "./test.conf"; // Provide the path to your config file
     int nBit, nPol, isComplex, nChan, nant, numFFT;
     double lo, bandwidth;
     char **antenna = NULL, **antFiles = NULL;
@@ -347,42 +367,88 @@ int main() {
     //FxKernel declarations
     int fftchannels, stridesize, substridesize, fractionalLoFreq, nbaselines;
     double sampletime;
-    cf32 ***unpacked = (cf32 ***) malloc(nant * sizeof(cf32 **));
-    cf32 ***channelised = (cf32 ***) malloc(nant * sizeof(cf32 **));
-    cf32 ***conjchannels = (cf32 ***) malloc(nant * sizeof(cf32 **));
-    cf32 ***visibilities = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
 
-    int *baselineCount = (int *) malloc((nant * (nant - 1) / 2) * sizeof(int));
+    int split_size = 1;
+
+
+    cf32 ***unpacked = (cf32 ***) malloc(split_size * nant * sizeof(cf32 **));
+    cf32 ***channelised = (cf32 ***) malloc(split_size * nant * sizeof(cf32 **));
+    cf32 ***conjchannels = (cf32 ***) malloc(split_size* nant * sizeof(cf32 **));
+    cf32 ***visibilities = (cf32 ***) malloc(split_size* (nant * (nant - 1) / 2) * sizeof(cf32 **));
+
+    int *baselineCount = (int *) malloc(split_size * (nant * (nant - 1) / 2) * sizeof(int));
 
     init_FxKernel(&nant, &nChan, &nBit, &lo, &bandwidth, starttime,
                   starttimestring, &fftchannels, &sampletime, &stridesize,
-                  &substridesize, &fractionalLoFreq, unpacked, channelised, conjchannels, visibilities, &nbaselines, baselineCount);
+                  &substridesize, &fractionalLoFreq, unpacked, channelised, conjchannels, visibilities, &nbaselines, baselineCount, split_size);
 
-    // Should be a SPLIT
-
-    // END OF SPLIT
 
     long long diff_ms;
-    int split_size = 2;
 
-    cf32 ***vis_to_norm = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
-    int *baselineCount_to_norm = (int *) malloc((nant * (nant - 1) / 2) * sizeof(int));
+    int *baselineCount_to_norm = (int *) malloc(split_size * (nant * (nant - 1) / 2) * sizeof(int));
 
-        processAntennasAndBaseline(&nant, &numFFT, &fftchannels, antFileOffsets, &sampletime, inputdata, unpacked,
-                                   channelised,
-                                   conjchannels, delays, &nBit, &substridesize, &stridesize, &fractionalLoFreq, &lo,
-                                   &nChan,
-                                   visibilities, baselineCount, &bandwidth, vis_to_norm, baselineCount_to_norm);
+    int *iter = (int *)malloc(numFFT * sizeof(int));
 
+    for(int i = 0; i < numFFT; i ++){
+        iter[i] = i;
+    }
 
-    printf("nBaselines : %d \n", nbaselines);
+    cf32 ***vis_to_norm = (cf32 ***) malloc((split_size * (nant * (nant - 1) / 2)) * sizeof(cf32 **));
+
+    int numffts_split = numFFT / split_size;
+
+    clock_t start_ant = clock();
+    for (int i = 0; i < split_size; i++) {
+        processAntennasAndBaselinePara(&nant, &numffts_split, &fftchannels, antFileOffsets, &sampletime, inputdata, &(unpacked[i * nant]),
+                                       &(channelised[i * nant]), &(conjchannels[i * nant]), delays, &nBit, &substridesize, &stridesize, &fractionalLoFreq,
+                                       &lo, &nChan, &(visibilities[i * ((nant * (nant - 1) / 2))]),
+                                       &(baselineCount[i * ((nant * (nant - 1) / 2))]), //&(vis_for_split[i * ((nant * (nant - 1) / 2))])
+                                       &(iter[numffts_split*i]), &bandwidth, &(vis_to_norm[i * ((nant * (nant - 1) / 2))]), //
+                                       &(baselineCount_to_norm[i * ((nant * (nant - 1) / 2))]), split_size);
+    }
+
+    /*
+    for(int i = 0; i < numFFT; i++) {
+        for(int j = 0; j < nant; j++) {
+            stationDelayAndOffset(delays, &(iter[i]), antFileOffsets, antValid, offset, fracDelay, delaya, delayb, sampletime, fftchannels, numFFT);
+
+            unpackImpl(unpacked[j], split_size, nant, fftchannels, inputdata[j], offset, nBit);
+
+            fringeRotateImpl(kernel, unpacked[j], delaya, delayb, substridesize, stridesize, lo, fftchannels, fractionalLoFreq, unpacked_out, kernel_out);
+
+            doFFTImpl(kernel_out, unpacked_out[j], channelised[j], fftchannels);
+
+            fracSampleCorrectImpl(kernel_out, channelised[j], fracDelay, stridesize, nChan, channelised_out[j]);
+
+            conjChannelsImpl(channelised_out[j], conjchannels[j], nChan, fftchannels, channelised_out_out[j]);
+        }
+    }
+*/
+
+    printf("Time taken ant in ms : %f \n", (double) (1000 * (clock() - start_ant)) / (CLOCKS_PER_SEC));
+
+    cf32 ***vis_for_split = (cf32 ***) malloc(((nant * (nant - 1) / 2)) * sizeof(cf32 **));
+    int *baselineCount_for_split = (int *) malloc((nant * (nant - 1) / 2) * sizeof(int));
+
+    merge(split_size, nbaselines, visibilities, &nant, &nChan, baselineCount, vis_for_split, baselineCount_for_split);
+
     int nbaselines_split = nbaselines / split_size;
     cf32 ***vis_out = (cf32 ***) malloc((nant * (nant - 1) / 2) * sizeof(cf32 **));
 
     for (int i = 0; i < split_size; i++) {
-        processNormalize(&nbaselines_split, &(baselineCount_to_norm[nbaselines_split * i]),
-                         &(vis_to_norm[nbaselines_split * i]), &nChan, &(vis_out[nbaselines_split * i]));
+        processNormalize(&nbaselines_split, &(baselineCount_for_split[nbaselines_split * i]),
+                         &(vis_for_split[nbaselines_split * i]), &nChan, &(vis_out[nbaselines_split * i]));
     }
+
+    //("Im : %f \n", visibilities[1][2][3].im); // 484.90
+    printf("Im : %f \n", vis_to_norm[1][2][3].im); // 484.90
+
+//    printf("test : %e \n", vis_out[0][0][0].re);
+//    printf("test : %e \n", vis_out[0][0][1].re);
+//    printf("test : %e \n", vis_out[0][0][2].re);
+//    printf("test : %e \n", vis_out[0][0][3].re);
+
+    //mergeTest(nbaselines, numFFT, nant);
 
     endTiming(starttime, &diff_ms);
 
